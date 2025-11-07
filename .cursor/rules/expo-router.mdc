@@ -1,0 +1,432 @@
+# Regras Expo Router - Nomad Travel
+
+## Estrutura de Rotas
+
+### Organização de Pastas
+
+```
+app/
+├── _layout.tsx                    # Layout raiz
+├── index.tsx                      # Tela inicial (redireciona ou lista destinos)
+├── (tabs)/                        # Grupo de abas principais
+│   ├── _layout.tsx               # Layout das abas
+│   ├── explore.tsx               # Aba: Explorar destinos
+│   ├── favorites.tsx             # Aba: Favoritos
+│   └── profile.tsx               # Aba: Perfil
+├── (modals)/                      # Grupo de modais/telas sobrepostas
+│   ├── _layout.tsx               # Layout de modais
+│   ├── destination/[id].tsx      # Modal: Detalhes do destino
+│   ├── filters.tsx                # Modal: Filtros de busca
+│   └── login.tsx                  # Modal: Login
+├── (protected)/                   # Rotas protegidas
+│   ├── _layout.tsx               # Layout com verificação de auth
+│   └── (auth)/
+│       ├── login.tsx             # Tela de login (full screen)
+│       └── register.tsx          # Tela de registro
+└── city/
+    └── [id].tsx                   # Rota dinâmica: Detalhes da cidade
+```
+
+### Convenções de Nomenclatura
+
+- **Grupos**: `(tabs)`, `(modals)`, `(protected)` - não aparecem na URL
+- **Rotas dinâmicas**: `[id].tsx`, `[slug].tsx` - parâmetros de rota
+- **Rotas catch-all**: `[...slug].tsx` - captura múltiplos segmentos
+- **Layouts**: `_layout.tsx` - define layout para grupo de rotas
+
+## Rotas Aninhadas
+
+### Grupo de Abas (tabs)
+
+```typescript
+// app/(tabs)/_layout.tsx
+import { Tabs } from 'expo-router';
+import { Icon } from '@/components/ui/Icon';
+
+export default function TabsLayout() {
+  return (
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.gray,
+      }}
+    >
+      <Tabs.Screen
+        name="explore"
+        options={{
+          title: 'Explorar',
+          tabBarIcon: ({ color }) => <Icon name="search" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="favorites"
+        options={{
+          title: 'Favoritos',
+          tabBarIcon: ({ color }) => <Icon name="heart" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Perfil',
+          tabBarIcon: ({ color }) => <Icon name="user" color={color} />,
+        }}
+      />
+    </Tabs>
+  );
+}
+```
+
+### Grupo de Modais
+
+```typescript
+// app/(modals)/_layout.tsx
+import { Stack } from 'expo-router';
+
+export default function ModalsLayout() {
+  return (
+    <Stack
+      screenOptions={{
+        presentation: 'modal',
+        headerShown: true,
+        headerBackTitleVisible: false,
+      }}
+    >
+      <Stack.Screen
+        name="destination/[id]"
+        options={{ title: 'Detalhes do Destino' }}
+      />
+      <Stack.Screen
+        name="filters"
+        options={{ title: 'Filtros' }}
+      />
+      <Stack.Screen
+        name="login"
+        options={{ title: 'Entrar' }}
+      />
+    </Stack>
+  );
+}
+```
+
+### Rotas Protegidas
+
+```typescript
+// app/(protected)/_layout.tsx
+import { Redirect, Stack } from 'expo-router';
+import { useAuth } from '@/hooks/useAuth';
+
+export default function ProtectedLayout() {
+  const { isAuthenticated, loading } = useAuth();
+  
+  if (loading) {
+    return <LoadingScreen />;
+  }
+  
+  if (!isAuthenticated) {
+    return <Redirect href="/(modals)/login" />;
+  }
+  
+  return (
+    <Stack>
+      <Stack.Screen name="(auth)/login" />
+      <Stack.Screen name="(auth)/register" />
+    </Stack>
+  );
+}
+```
+
+## Padrões de Navegação
+
+### Link Component
+
+```typescript
+// ✅ Usar Link para navegação declarativa
+import { Link } from 'expo-router';
+
+<Link href="/city/123" asChild>
+  <Pressable>
+    <Text>Ver Detalhes</Text>
+  </Pressable>
+</Link>
+
+// Com parâmetros
+<Link href={{ pathname: '/city/[id]', params: { id: city.id } }}>
+  <Text>{city.name}</Text>
+</Link>
+```
+
+### router.push
+
+```typescript
+// ✅ Usar router.push para navegação programática
+import { useRouter } from 'expo-router';
+
+const router = useRouter();
+
+const handleNavigate = () => {
+  router.push('/city/123');
+  
+  // Ou com parâmetros
+  router.push({
+    pathname: '/city/[id]',
+    params: { id: city.id, name: city.name }
+  });
+};
+```
+
+### router.back
+
+```typescript
+// ✅ Voltar para tela anterior
+const router = useRouter();
+
+const handleGoBack = () => {
+  router.back();
+  
+  // Ou voltar para rota específica
+  router.replace('/(tabs)/explore');
+};
+```
+
+### router.replace
+
+```typescript
+// ✅ Substituir histórico (útil após login)
+const router = useRouter();
+
+const handleLogin = async () => {
+  await login(credentials);
+  router.replace('/(tabs)/explore');
+};
+```
+
+## Tipagem de Rotas e Parâmetros
+
+### Tipos de Parâmetros
+
+```typescript
+// app/city/[id].tsx
+import { useLocalSearchParams } from 'expo-router';
+
+export default function CityScreen() {
+  const params = useLocalSearchParams<{ id: string }>();
+  const { id } = params;
+  
+  // Validar parâmetros
+  if (!id || typeof id !== 'string') {
+    return <ErrorScreen />;
+  }
+  
+  // ...
+}
+```
+
+### Parâmetros de Query
+
+```typescript
+// app/search.tsx?q=bali&category=beach
+import { useLocalSearchParams } from 'expo-router';
+
+export default function SearchScreen() {
+  const { q, category } = useLocalSearchParams<{ 
+    q?: string; 
+    category?: string;
+  }>();
+  
+  // ...
+}
+```
+
+### Tipagem com Expo Router Typed Routes
+
+```typescript
+// Com typedRoutes habilitado no app.json
+import { Href } from 'expo-router';
+
+// ✅ Tipagem automática de rotas
+const href: Href = '/city/123';
+const hrefWithParams: Href<'/city/[id]'> = {
+  pathname: '/city/[id]',
+  params: { id: '123' }
+};
+```
+
+## Convenções de URL
+
+### Estrutura de URLs
+
+```
+/                           # Home/Explorar
+/city/[id]                  # Detalhes da cidade
+/(tabs)/explore            # Aba Explorar
+/(tabs)/favorites           # Aba Favoritos
+/(tabs)/profile             # Aba Perfil
+/(modals)/destination/[id]  # Modal de destino
+/(modals)/filters           # Modal de filtros
+/(modals)/login             # Modal de login
+```
+
+### URLs Semânticas
+
+- ✅ `/city/amsterdam` - ID ou slug da cidade
+- ✅ `/destination/bali-beach` - Slug descritivo
+- ❌ `/c/123` - Evitar abreviações
+- ❌ `/page?id=123` - Preferir rotas dinâmicas
+
+## Deep Linking
+
+### Configuração no app.json
+
+```json
+{
+  "expo": {
+    "scheme": "nomadtravel",
+    "ios": {
+      "associatedDomains": ["applinks:nomadtravel.com"]
+    },
+    "android": {
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "https",
+              "host": "nomadtravel.com",
+              "pathPrefix": "/city"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    }
+  }
+}
+```
+
+### Tratamento de Deep Links
+
+```typescript
+// app/_layout.tsx
+import { useEffect } from 'react';
+import * as Linking from 'expo-linking';
+import { useRouter } from 'expo-router';
+
+export default function RootLayout() {
+  const router = useRouter();
+  
+  useEffect(() => {
+    // Tratar deep link inicial
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink(url);
+      }
+    });
+    
+    // Tratar deep links subsequentes
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      handleDeepLink(url);
+    });
+    
+    return () => subscription.remove();
+  }, []);
+  
+  const handleDeepLink = (url: string) => {
+    // nomadtravel://city/123
+    // https://nomadtravel.com/city/123
+    const { path, queryParams } = Linking.parse(url);
+    
+    if (path === '/city' && queryParams?.id) {
+      router.push(`/city/${queryParams.id}`);
+    }
+  };
+  
+  // ...
+}
+```
+
+## Boas Práticas
+
+### Prefetch de Rotas
+
+```typescript
+// ✅ Prefetch para melhor UX
+import { useRouter } from 'expo-router';
+
+const router = useRouter();
+
+const handlePress = () => {
+  // Prefetch antes de navegar
+  router.prefetch(`/city/${city.id}`);
+  
+  // Navegar após delay curto
+  setTimeout(() => {
+    router.push(`/city/${city.id}`);
+  }, 100);
+};
+```
+
+### Proteção de Rotas
+
+```typescript
+// ✅ Verificar autenticação antes de renderizar
+export default function ProtectedScreen() {
+  const { isAuthenticated } = useAuth();
+  
+  if (!isAuthenticated) {
+    return <Redirect href="/(modals)/login" />;
+  }
+  
+  return <ScreenContent />;
+}
+```
+
+### Loading States
+
+```typescript
+// ✅ Mostrar loading durante navegação
+import { useSegments } from 'expo-router';
+
+export default function Screen() {
+  const segments = useSegments();
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    // Carregar dados baseado na rota
+    loadData(segments).finally(() => setLoading(false));
+  }, [segments]);
+  
+  if (loading) {
+    return <LoadingScreen />;
+  }
+  
+  return <Content />;
+}
+```
+
+### Tratamento de Erros 404
+
+```typescript
+// app/city/[id].tsx
+export default function CityScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { city, loading, error } = useCity(id);
+  
+  if (loading) {
+    return <LoadingScreen />;
+  }
+  
+  if (error || !city) {
+    return (
+      <ErrorScreen 
+        message="Cidade não encontrada"
+        onRetry={() => router.replace('/(tabs)/explore')}
+      />
+    );
+  }
+  
+  return <CityDetails city={city} />;
+}
+```
+

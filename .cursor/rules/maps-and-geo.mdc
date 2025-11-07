@@ -1,0 +1,447 @@
+# Regras de Mapas e Geografia - Nomad Travel
+
+## React Native Maps (via Expo)
+
+### Instalação e Configuração
+
+```bash
+# Instalar dependências
+npx expo install react-native-maps
+```
+
+### Configuração no app.json
+
+```json
+{
+  "expo": {
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Permitir acesso à localização para mostrar destinos próximos."
+        }
+      ]
+    ]
+  }
+}
+```
+
+## Padrões para Exibir Localizações
+
+### MapView Básico
+
+```typescript
+// components/maps/CityMap.tsx
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { StyleSheet, View } from 'react-native';
+import { City, Coordinates } from '@/types';
+import { colors, spacing } from '@/theme';
+
+interface CityMapProps {
+  city: City;
+  touristAttractions?: Array<{
+    id: string;
+    name: string;
+    location: Coordinates;
+  }>;
+  height?: number;
+}
+
+export const CityMap: React.FC<CityMapProps> = ({
+  city,
+  touristAttractions = [],
+  height = 300,
+}) => {
+  const region = {
+    latitude: city.location.latitude,
+    longitude: city.location.longitude,
+    latitudeDelta: 0.1, // Zoom apropriado para cidade
+    longitudeDelta: 0.1,
+  };
+  
+  return (
+    <View style={[styles.container, { height }]}>
+      <MapView
+        provider={PROVIDER_GOOGLE}
+        style={styles.map}
+        initialRegion={region}
+        minZoomLevel={5}
+        maxZoomLevel={18}
+        showsUserLocation={false}
+        showsMyLocationButton={false}
+        showsCompass={true}
+        showsScale={true}
+        mapType="standard"
+      >
+        {/* Marcador da cidade */}
+        <Marker
+          coordinate={city.location}
+          title={city.name}
+          description={city.country}
+          pinColor={colors.primary.main}
+        />
+        
+        {/* Marcadores de pontos turísticos */}
+        {touristAttractions.map((attraction) => (
+          <Marker
+            key={attraction.id}
+            coordinate={attraction.location}
+            title={attraction.name}
+            pinColor={colors.info}
+          />
+        ))}
+      </MapView>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginVertical: spacing.md,
+  },
+  map: {
+    width: '100%',
+    height: '100%',
+  },
+});
+```
+
+### Zoom Mínimo/Máximo
+
+```typescript
+// ✅ Configurar limites de zoom apropriados
+const ZOOM_LEVELS = {
+  WORLD: 1,
+  COUNTRY: 5,
+  REGION: 8,
+  CITY: 12,
+  DISTRICT: 15,
+  STREET: 18,
+} as const;
+
+// Para visualização de cidade
+<MapView
+  minZoomLevel={ZOOM_LEVELS.CITY}
+  maxZoomLevel={ZOOM_LEVELS.STREET}
+  initialRegion={region}
+/>
+```
+
+## Integração com MapView e Coordinates
+
+### Tipo Coordinates
+
+```typescript
+// types/coordinates.ts
+export interface Coordinates {
+  latitude: number;
+  longitude: number;
+}
+
+// Helper para validar coordenadas
+export function isValidCoordinates(coords: unknown): coords is Coordinates {
+  return (
+    typeof coords === 'object' &&
+    coords !== null &&
+    'latitude' in coords &&
+    'longitude' in coords &&
+    typeof (coords as Coordinates).latitude === 'number' &&
+    typeof (coords as Coordinates).longitude === 'number' &&
+    (coords as Coordinates).latitude >= -90 &&
+    (coords as Coordinates).latitude <= 90 &&
+    (coords as Coordinates).longitude >= -180 &&
+    (coords as Coordinates).longitude <= 180
+  );
+}
+```
+
+### Componente de Mapa Interativo
+
+```typescript
+// components/maps/InteractiveMap.tsx
+import { useState, useRef } from 'react';
+import MapView, { Region, Marker } from 'react-native-maps';
+import { City } from '@/types';
+
+interface InteractiveMapProps {
+  cities: City[];
+  onCityPress?: (city: City) => void;
+  selectedCityId?: string;
+}
+
+export const InteractiveMap: React.FC<InteractiveMapProps> = ({
+  cities,
+  onCityPress,
+  selectedCityId,
+}) => {
+  const mapRef = useRef<MapView>(null);
+  const [region, setRegion] = useState<Region>({
+    latitude: 0,
+    longitude: 0,
+    latitudeDelta: 50,
+    longitudeDelta: 50,
+  });
+  
+  const handleMarkerPress = (city: City) => {
+    // Animar para a cidade
+    mapRef.current?.animateToRegion({
+      latitude: city.location.latitude,
+      longitude: city.location.longitude,
+      latitudeDelta: 0.5,
+      longitudeDelta: 0.5,
+    }, 1000);
+    
+    onCityPress?.(city);
+  };
+  
+  return (
+    <MapView
+      ref={mapRef}
+      style={styles.map}
+      initialRegion={region}
+      onRegionChangeComplete={setRegion}
+      minZoomLevel={3}
+      maxZoomLevel={18}
+    >
+      {cities.map((city) => (
+        <Marker
+          key={city.id}
+          coordinate={city.location}
+          title={city.name}
+          description={city.country}
+          onPress={() => handleMarkerPress(city)}
+          pinColor={
+            selectedCityId === city.id
+              ? colors.primary.main
+              : colors.gray
+          }
+        />
+      ))}
+    </MapView>
+  );
+};
+```
+
+## Boas Práticas
+
+### Evitar Excesso de Marcadores
+
+```typescript
+// ✅ Clustering para muitos marcadores
+import { Marker, MarkerClusterer } from 'react-native-maps';
+
+// Ou implementar lógica de agrupamento
+function groupMarkersByZoom(
+  markers: Marker[],
+  zoomLevel: number
+): Marker[] {
+  if (zoomLevel < 10) {
+    // Agrupar marcadores próximos
+    return clusterMarkers(markers);
+  }
+  return markers;
+}
+
+// ✅ Limitar número de marcadores visíveis
+const MAX_VISIBLE_MARKERS = 50;
+
+function getVisibleMarkers(
+  allMarkers: Marker[],
+  region: Region
+): Marker[] {
+  const visible = allMarkers.filter((marker) =>
+    isMarkerInRegion(marker, region)
+  );
+  
+  if (visible.length > MAX_VISIBLE_MARKERS) {
+    // Priorizar marcadores mais relevantes
+    return visible
+      .sort((a, b) => b.relevance - a.relevance)
+      .slice(0, MAX_VISIBLE_MARKERS);
+  }
+  
+  return visible;
+}
+```
+
+### Ícones Customizados Leves
+
+```typescript
+// ✅ Usar ícones SVG ou PNG otimizados
+import { Image } from 'expo-image';
+
+// Criar componente de marcador customizado
+const CustomMarker: React.FC<{ city: City; isSelected: boolean }> = ({
+  city,
+  isSelected,
+}) => {
+  return (
+    <Marker
+      coordinate={city.location}
+      anchor={{ x: 0.5, y: 1 }}
+    >
+      <View style={styles.markerContainer}>
+        <Image
+          source={isSelected ? require('@/assets/marker-selected.png') : require('@/assets/marker.png')}
+          style={styles.markerImage}
+          contentFit="contain"
+        />
+        <Text style={styles.markerText}>{city.name}</Text>
+      </View>
+    </Marker>
+  );
+};
+
+// ✅ Otimizar imagens
+// - Usar PNG com transparência para ícones
+// - Tamanho máximo: 64x64px para marcadores
+// - Comprimir imagens antes de adicionar ao projeto
+```
+
+### Gerenciamento de Permissões
+
+```typescript
+// lib/location.ts
+import * as Location from 'expo-location';
+
+export async function requestLocationPermission(): Promise<boolean> {
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    return status === 'granted';
+  } catch (error) {
+    console.error('[Location] Permission error:', error);
+    return false;
+  }
+}
+
+export async function getCurrentLocation(): Promise<Coordinates | null> {
+  const hasPermission = await requestLocationPermission();
+  
+  if (!hasPermission) {
+    throw new Error('Location permission not granted');
+  }
+  
+  try {
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+    
+    return {
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+    };
+  } catch (error) {
+    console.error('[Location] Get location error:', error);
+    return null;
+  }
+}
+
+// Hook para localização do usuário
+export function useUserLocation() {
+  const [location, setLocation] = useState<Coordinates | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  
+  useEffect(() => {
+    loadLocation();
+  }, []);
+  
+  const loadLocation = async () => {
+    try {
+      setLoading(true);
+      const coords = await getCurrentLocation();
+      setLocation(coords);
+    } catch (err) {
+      setError(err as Error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return { location, loading, error, refetch: loadLocation };
+}
+```
+
+### Exemplo Completo de Uso
+
+```typescript
+// screens/CityDetailsScreen.tsx
+import { CityMap } from '@/components/maps/CityMap';
+import { useUserLocation } from '@/lib/location';
+import { calculateDistance } from '@/lib/utils';
+
+export const CityDetailsScreen: React.FC<{ city: City }> = ({ city }) => {
+  const { location: userLocation } = useUserLocation();
+  
+  const distance = userLocation
+    ? calculateDistance(userLocation, city.location)
+    : null;
+  
+  return (
+    <ScrollView>
+      <CityHeader city={city} />
+      
+      {distance && (
+        <DistanceBadge distance={distance} />
+      )}
+      
+      <CityMap
+        city={city}
+        touristAttractions={city.touristAttractions.map((attraction) => ({
+          id: attraction.id,
+          name: attraction.name,
+          location: attraction.location || city.location,
+        }))}
+        height={400}
+      />
+      
+      <TouristAttractionsList attractions={city.touristAttractions} />
+    </ScrollView>
+  );
+};
+```
+
+## Performance
+
+### Otimizações de Mapa
+
+```typescript
+// ✅ Usar liteMode para melhor performance em listas
+<MapView
+  liteMode={true} // Para mapas em listas/cards
+  style={styles.map}
+/>
+
+// ✅ Cache de tiles
+<MapView
+  mapPadding={{ top: 0, right: 0, bottom: 0, left: 0 }}
+  cacheEnabled={true}
+  loadingEnabled={true}
+/>
+
+// ✅ Lazy loading de marcadores
+const [visibleMarkers, setVisibleMarkers] = useState<City[]>([]);
+
+const handleRegionChange = (region: Region) => {
+  const visible = cities.filter((city) =>
+    isInRegion(city.location, region)
+  );
+  setVisibleMarkers(visible);
+};
+```
+
+## Acessibilidade
+
+```typescript
+// ✅ Adicionar labels acessíveis
+<Marker
+  coordinate={city.location}
+  title={city.name}
+  description={`${city.country}. ${city.description}`}
+  accessibilityLabel={`Marcador para ${city.name}, ${city.country}`}
+  accessibilityHint="Toque duas vezes para ver detalhes da cidade"
+/>
+```
+

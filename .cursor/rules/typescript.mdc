@@ -1,0 +1,351 @@
+---
+alwaysApply: false
+---
+  touristAttractions: TouristAttraction[];
+  location: Coordinates;
+  categories: Category[];
+  relatedCitiesIds: string[];
+  population?: number;
+  timezone?: string;
+  currency?: string;
+  language?: string[];
+}
+
+export type Destination = City; // Alias para compatibilidade
+```
+
+### User
+
+```typescript
+// types/user.ts
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  avatar?: string;
+  preferences: UserPreferences;
+  createdAt: string;
+  lastLoginAt?: string;
+}
+
+export interface UserPreferences {
+  theme: 'light' | 'dark' | 'auto';
+  language: string;
+  currency: string;
+  notifications: {
+    favorites: boolean;
+    deals: boolean;
+    updates: boolean;
+  };
+}
+```
+
+### Favorite
+
+```typescript
+// types/favorite.ts
+export interface Favorite {
+  id: string;
+  userId: string;
+  cityId: string;
+  createdAt: string;
+  notes?: string;
+}
+
+export interface FavoriteWithCity extends Favorite {
+  city: City;
+}
+```
+
+### Filter
+
+```typescript
+// types/filter.ts
+export type CategoryCode =
+  | 'ADVENTURE'
+  | 'BEACH'
+  | 'CULTURE'
+  | 'GASTRONOMY'
+  | 'HISTORY'
+  | 'LUXURY'
+  | 'NATURE'
+  | 'SHOPPING'
+  | 'URBAN';
+
+export interface Filter {
+  searchQuery?: string;
+  categories?: CategoryCode[];
+  minRating?: number;
+  maxDistance?: number; // em km
+  priceRange?: {
+    min: number;
+    max: number;
+  };
+  sortBy?: 'name' | 'rating' | 'distance' | 'popularity';
+  sortOrder?: 'asc' | 'desc';
+}
+```
+
+### Coordinates
+
+```typescript
+// types/coordinates.ts
+export interface Coordinates {
+  latitude: number;
+  longitude: number;
+}
+
+export interface BoundingBox {
+  northEast: Coordinates;
+  southWest: Coordinates;
+}
+
+// Helper para validar coordenadas
+export function isValidCoordinates(coords: unknown): coords is Coordinates {
+  return (
+    typeof coords === 'object' &&
+    coords !== null &&
+    'latitude' in coords &&
+    'longitude' in coords &&
+    typeof (coords as Coordinates).latitude === 'number' &&
+    typeof (coords as Coordinates).longitude === 'number' &&
+    (coords as Coordinates).latitude >= -90 &&
+    (coords as Coordinates).latitude <= 90 &&
+    (coords as Coordinates).longitude >= -180 &&
+    (coords as Coordinates).longitude <= 180
+  );
+}
+```
+
+## Regras para Módulos de Utilidades
+
+### lib/utils.ts
+
+```typescript
+// ✅ Funções tipadas e exportadas
+export function formatDate(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return d.toLocaleDateString('pt-BR');
+}
+
+export function calculateDistance(
+  point1: Coordinates,
+  point2: Coordinates
+): number {
+  // Implementação da fórmula de Haversine
+  const R = 6371; // Raio da Terra em km
+  const dLat = toRad(point2.latitude - point1.latitude);
+  const dLon = toRad(point2.longitude - point1.longitude);
+  
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(point1.latitude)) *
+      Math.cos(toRad(point2.latitude)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function toRad(degrees: number): number {
+  return degrees * (Math.PI / 180);
+}
+
+// ✅ Type guards
+export function isCity(value: unknown): value is City {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'id' in value &&
+    'name' in value &&
+    'country' in value &&
+    'location' in value
+  );
+}
+```
+
+### Validação de Dados
+
+```typescript
+// ✅ Validar dados de entrada
+export function validateCity(data: unknown): City {
+  if (!isCity(data)) {
+    throw new Error('Invalid city data');
+  }
+  
+  // Validações adicionais
+  if (!data.id || !data.name || !data.country) {
+    throw new Error('City missing required fields');
+  }
+  
+  if (!isValidCoordinates(data.location)) {
+    throw new Error('Invalid city coordinates');
+  }
+  
+  return data;
+}
+```
+
+## Evitar Non-null Assertions
+
+```typescript
+// ❌ Evitar
+const city = cities.find(c => c.id === id)!;
+const name = user?.name!;
+
+// ✅ Correto - Tratamento explícito
+const city = cities.find(c => c.id === id);
+if (!city) {
+  throw new Error(`City with id ${id} not found`);
+}
+
+// Ou com fallback
+const name = user?.name ?? 'Usuário';
+
+// Ou com type guard
+function findCityById(cities: City[], id: string): City {
+  const city = cities.find(c => c.id === id);
+  if (!city) {
+    throw new Error(`City with id ${id} not found`);
+  }
+  return city;
+}
+```
+
+## Evitar Coerções Implícitas
+
+```typescript
+// ❌ Evitar
+const id = params.id as string;
+const count = data.count as number;
+
+// ✅ Correto - Validação explícita
+function getStringParam(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw new Error('Expected string parameter');
+  }
+  return value;
+}
+
+const id = getStringParam(params.id);
+
+// Ou usar type guard
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+if (isString(params.id)) {
+  const id = params.id; // TypeScript sabe que é string
+}
+```
+
+## Exportar Interfaces e Tipos
+
+### Sempre Nomeados
+
+```typescript
+// ✅ Correto - Exportação nomeada
+export interface Destination {
+  id: string;
+  name: string;
+}
+
+export type CategoryCode = 'BEACH' | 'MOUNTAIN';
+
+// ❌ Evitar - Exportação default para tipos
+export default interface Destination {
+  // ...
+}
+```
+
+### Organização de Tipos
+
+```typescript
+// types/index.ts - Re-exportar todos os tipos
+export type { City, Destination } from './destination';
+export type { User, UserPreferences } from './user';
+export type { Favorite, FavoriteWithCity } from './favorite';
+export type { Filter, CategoryCode } from './filter';
+export type { Coordinates, BoundingBox } from './coordinates';
+```
+
+## Generics
+
+```typescript
+// ✅ Usar generics quando apropriado
+export interface ApiResponse<T> {
+  data: T;
+  status: number;
+  message?: string;
+}
+
+export async function fetchData<T>(
+  endpoint: string
+): Promise<ApiResponse<T>> {
+  const response = await fetch(endpoint);
+  const data = await response.json();
+  return { data, status: response.status };
+}
+
+// Uso
+const citiesResponse = await fetchData<City[]>('/api/cities');
+```
+
+## Utility Types
+
+```typescript
+// ✅ Usar utility types do TypeScript
+type PartialCity = Partial<City>;
+type CityPreview = Pick<City, 'id' | 'name' | 'coverImage'>;
+type CityWithoutLocation = Omit<City, 'location'>;
+type RequiredCity = Required<City>;
+type ReadonlyCity = Readonly<City>;
+```
+
+## Boas Práticas
+
+### Type Narrowing
+
+```typescript
+// ✅ Usar type narrowing
+function processValue(value: string | number) {
+  if (typeof value === 'string') {
+    return value.toUpperCase(); // TypeScript sabe que é string
+  }
+  return value.toFixed(2); // TypeScript sabe que é number
+}
+```
+
+### Discriminated Unions
+
+```typescript
+// ✅ Usar discriminated unions
+type LoadingState = 
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'success'; data: City[] }
+  | { status: 'error'; error: Error };
+
+function handleState(state: LoadingState) {
+  switch (state.status) {
+    case 'idle':
+      return 'Ready';
+    case 'loading':
+      return 'Loading...';
+    case 'success':
+      return `Loaded ${state.data.length} cities`;
+    case 'error':
+      return `Error: ${state.error.message}`;
+  }
+}
+```
+
+### Const Assertions
+
+```typescript
+// ✅ Usar const assertions quando apropriado
+const categories = ['BEACH', 'MOUNTAIN', 'CITY'] as const;
+type Category = typeof categories[number]; // 'BEACH' | 'MOUNTAIN' | 'CITY'
+```
+

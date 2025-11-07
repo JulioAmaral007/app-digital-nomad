@@ -1,0 +1,601 @@
+# Regras de Estado e Dados - Nomad Travel
+
+## Gerenciamento de Estado
+
+### React Context para Estado Global
+
+```typescript
+// contexts/AuthContext.tsx
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { User } from '@/types';
+import * as AuthService from '@/services/auth';
+
+interface AuthContextType {
+  user: User | null;
+  isAuthenticated: boolean;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  updateUser: (user: Partial<User>) => void;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    loadUser();
+  }, []);
+  
+  const loadUser = async () => {
+    try {
+      const storedUser = await AuthService.getStoredUser();
+      setUser(storedUser);
+    } catch (error) {
+      console.error('[AuthContext]', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const login = async (email: string, password: string) => {
+    const userData = await AuthService.login(email, password);
+    setUser(userData);
+    await AuthService.storeUser(userData);
+  };
+  
+  const logout = async () => {
+    await AuthService.logout();
+    setUser(null);
+  };
+  
+  const updateUser = (updates: Partial<User>) => {
+    if (user) {
+      const updatedUser = { ...user, ...updates };
+      setUser(updatedUser);
+      AuthService.storeUser(updatedUser);
+    }
+  };
+  
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: !!user,
+        loading,
+        login,
+        logout,
+        updateUser,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+  return context;
+};
+```
+
+### Zustand (Opcional para Estado Complexo)
+
+```typescript
+// stores/favoritesStore.ts
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { Favorite, City } from '@/types';
+import * as FavoritesService from '@/services/favorites';
+
+interface FavoritesStore {
+  favorites: Favorite[];
+  favoriteCities: City[];
+  loading: boolean;
+  addFavorite: (cityId: string) => Promise<void>;
+  removeFavorite: (cityId: string) => Promise<void>;
+  isFavorite: (cityId: string) => boolean;
+  loadFavorites: () => Promise<void>;
+}
+
+export const useFavoritesStore = create<FavoritesStore>()(
+  persist(
+    (set, get) => ({
+      favorites: [],
+      favoriteCities: [],
+      loading: false,
+      
+      addFavorite: async (cityId: string) => {
+        const favorite = await FavoritesService.addFavorite(cityId);
+        set((state) => ({
+          favorites: [...state.favorites, favorite],
+        }));
+        await get().loadFavorites();
+      },
+      
+      removeFavorite: async (cityId: string) => {
+        await FavoritesService.removeFavorite(cityId);
+        set((state) => ({
+          favorites: state.favorites.filter((f) => f.cityId !== cityId),
+        }));
+        await get().loadFavorites();
+      },
+      
+      isFavorite: (cityId: string) => {
+        return get().favorites.some((f) => f.cityId === cityId);
+      },
+      
+      loadFavorites: async () => {
+        set({ loading: true });
+        try {
+          const favorites = await FavoritesService.getFavorites();
+          const cities = await FavoritesService.getFavoriteCities(favorites);
+          set({ favorites, favoriteCities: cities, loading: false });
+        } catch (error) {
+          console.error('[FavoritesStore]', error);
+          set({ loading: false });
+        }
+      },
+    }),
+    {
+      name: 'favorites-storage',
+    }
+  )
+);
+```
+
+## Armazenamento Local
+
+### AsyncStorage
+
+```typescript
+// lib/storage.ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const STORAGE_KEYS = {
+  USER: '@nomadtravel:user',
+  FAVORITES: '@nomadtravel:favorites',
+  PREFERENCES: '@nomadtravel:preferences',
+  CACHE_DESTINATIONS: '@nomadtravel:cache:destinations',
+} as const;
+
+export const storage = {
+  // Generic helpers
+  async get<T>(key: string): Promise<T | null> {
+    try {
+      const value = await AsyncStorage.getItem(key);
+      return value ? JSON.parse(value) : null;
+    } catch (error) {
+      console.error(`[Storage] Error getting ${key}:`, error);
+      return null;
+    }
+  },
+  
+  async set<T>(key: string, value: T): Promise<void> {
+    try {
+      await AsyncStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.error(`[Storage] Error setting ${key}:`, error);
+      throw error;
+    }
+  },
+  
+  async remove(key: string): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(key);
+    } catch (error) {
+      console.error(`[Storage] Error removing ${key}:`, error);
+      throw error;
+    }
+  },
+  
+  async clear(): Promise<void> {
+    try {
+      await AsyncStorage.clear();
+    } catch (error) {
+      console.error('[Storage] Error clearing:', error);
+      throw error;
+    }
+  },
+  
+  // Specific helpers
+  async getUser() {
+    return storage.get<User>(STORAGE_KEYS.USER);
+  },
+  
+  async setUser(user: User) {
+    return storage.set(STORAGE_KEYS.USER, user);
+  },
+  
+  async getFavorites() {
+    return storage.get<Favorite[]>(STORAGE_KEYS.FAVORITES);
+  },
+  
+  async setFavorites(favorites: Favorite[]) {
+    return storage.set(STORAGE_KEYS.FAVORITES, favorites);
+  },
+};
+```
+
+## Estrutura de Serviços
+
+### services/destinations.ts
+
+```typescript
+// services/destinations.ts
+import { City, Filter } from '@/types';
+import { storage } from '@/lib/storage';
+import { CITIES_DATA } from '@/data/cities';
+
+const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 horas
+const CACHE_KEY = '@nomadtravel:cache:destinations';
+
+interface CacheData {
+  cities: City[];
+  timestamp: number;
+}
+
+// Buscar todos os destinos
+export async function getDestinations(): Promise<City[]> {
+  // Verificar cache primeiro
+  const cached = await storage.get<CacheData>(CACHE_KEY);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.cities;
+  }
+  
+  // Buscar dados (aqui seria uma chamada API real)
+  const cities = CITIES_DATA;
+  
+  // Atualizar cache
+  await storage.set<CacheData>(CACHE_KEY, {
+    cities,
+    timestamp: Date.now(),
+  });
+  
+  return cities;
+}
+
+// Buscar destino por ID
+export async function getDestinationById(id: string): Promise<City | null> {
+  const cities = await getDestinations();
+  return cities.find((city) => city.id === id) || null;
+}
+
+// Buscar destinos com filtros
+export async function searchDestinations(filter: Filter): Promise<City[]> {
+  let cities = await getDestinations();
+  
+  // Aplicar filtro de busca
+  if (filter.searchQuery) {
+    const query = filter.searchQuery.toLowerCase();
+    cities = cities.filter(
+      (city) =>
+        city.name.toLowerCase().includes(query) ||
+        city.country.toLowerCase().includes(query) ||
+        city.description.toLowerCase().includes(query)
+    );
+  }
+  
+  // Aplicar filtro de categorias
+  if (filter.categories && filter.categories.length > 0) {
+    cities = cities.filter((city) =>
+      city.categories.some((cat) => filter.categories!.includes(cat.code))
+    );
+  }
+  
+  // Aplicar ordenação
+  if (filter.sortBy) {
+    cities.sort((a, b) => {
+      let comparison = 0;
+      
+      switch (filter.sortBy) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case 'popularity':
+          // Assumindo que temos um campo de popularidade
+          comparison = (b.popularity || 0) - (a.popularity || 0);
+          break;
+        default:
+          return 0;
+      }
+      
+      return filter.sortOrder === 'desc' ? -comparison : comparison;
+    });
+  }
+  
+  return cities;
+}
+
+// Invalidar cache
+export async function invalidateCache(): Promise<void> {
+  await storage.remove(CACHE_KEY);
+}
+```
+
+### services/auth.ts
+
+```typescript
+// services/auth.ts
+import { User } from '@/types';
+import { storage } from '@/lib/storage';
+
+const STORAGE_KEY = '@nomadtravel:user';
+
+// Login (simulado - em produção seria uma chamada API)
+export async function login(email: string, password: string): Promise<User> {
+  // Aqui faria a chamada real à API
+  // const response = await fetch('/api/auth/login', { ... });
+  
+  // Simulação
+  const user: User = {
+    id: '1',
+    email,
+    name: email.split('@')[0],
+    preferences: {
+      theme: 'auto',
+      language: 'pt-BR',
+      currency: 'BRL',
+      notifications: {
+        favorites: true,
+        deals: true,
+        updates: false,
+      },
+    },
+    createdAt: new Date().toISOString(),
+  };
+  
+  await storeUser(user);
+  return user;
+}
+
+// Logout
+export async function logout(): Promise<void> {
+  await storage.remove(STORAGE_KEY);
+}
+
+// Armazenar usuário
+export async function storeUser(user: User): Promise<void> {
+  await storage.setUser(user);
+}
+
+// Recuperar usuário armazenado
+export async function getStoredUser(): Promise<User | null> {
+  return storage.getUser();
+}
+```
+
+### services/favorites.ts
+
+```typescript
+// services/favorites.ts
+import { Favorite, City } from '@/types';
+import { storage } from '@/lib/storage';
+import { getDestinationById } from './destinations';
+
+const STORAGE_KEY = '@nomadtravel:favorites';
+
+// Adicionar favorito
+export async function addFavorite(cityId: string, userId: string): Promise<Favorite> {
+  const favorites = await getFavorites();
+  
+  // Verificar se já existe
+  if (favorites.some((f) => f.cityId === cityId && f.userId === userId)) {
+    throw new Error('City already in favorites');
+  }
+  
+  const favorite: Favorite = {
+    id: `fav_${Date.now()}`,
+    userId,
+    cityId,
+    createdAt: new Date().toISOString(),
+  };
+  
+  const updatedFavorites = [...favorites, favorite];
+  await storage.setFavorites(updatedFavorites);
+  
+  return favorite;
+}
+
+// Remover favorito
+export async function removeFavorite(cityId: string, userId: string): Promise<void> {
+  const favorites = await getFavorites();
+  const updatedFavorites = favorites.filter(
+    (f) => !(f.cityId === cityId && f.userId === userId)
+  );
+  await storage.setFavorites(updatedFavorites);
+}
+
+// Obter favoritos
+export async function getFavorites(userId?: string): Promise<Favorite[]> {
+  const favorites = await storage.getFavorites() || [];
+  
+  if (userId) {
+    return favorites.filter((f) => f.userId === userId);
+  }
+  
+  return favorites;
+}
+
+// Obter cidades favoritas
+export async function getFavoriteCities(favorites: Favorite[]): Promise<City[]> {
+  const cityPromises = favorites.map((f) => getDestinationById(f.cityId));
+  const cities = await Promise.all(cityPromises);
+  return cities.filter((city): city is City => city !== null);
+}
+
+// Verificar se é favorito
+export async function isFavorite(cityId: string, userId: string): Promise<boolean> {
+  const favorites = await getFavorites(userId);
+  return favorites.some((f) => f.cityId === cityId);
+}
+```
+
+## Cache e Invalidação
+
+### Estratégia de Cache
+
+```typescript
+// lib/cache.ts
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  expiresIn: number;
+}
+
+export class Cache {
+  private static instance: Cache;
+  private cache: Map<string, CacheEntry<unknown>> = new Map();
+  
+  static getInstance(): Cache {
+    if (!Cache.instance) {
+      Cache.instance = new Cache();
+    }
+    return Cache.instance;
+  }
+  
+  set<T>(key: string, data: T, expiresIn: number = 3600000): void {
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      expiresIn,
+    });
+  }
+  
+  get<T>(key: string): T | null {
+    const entry = this.cache.get(key);
+    
+    if (!entry) {
+      return null;
+    }
+    
+    const isExpired = Date.now() - entry.timestamp > entry.expiresIn;
+    
+    if (isExpired) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return entry.data as T;
+  }
+  
+  invalidate(key: string): void {
+    this.cache.delete(key);
+  }
+  
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
+export const cache = Cache.getInstance();
+```
+
+## Estratégia Offline-First
+
+### Hook para Dados Offline
+
+```typescript
+// hooks/useOfflineData.ts
+import { useState, useEffect } from 'react';
+import NetInfo from '@react-native-community/netinfo';
+
+interface UseOfflineDataOptions<T> {
+  fetchFn: () => Promise<T>;
+  cacheKey: string;
+  cacheDuration?: number;
+}
+
+export function useOfflineData<T>({
+  fetchFn,
+  cacheKey,
+  cacheDuration = 24 * 60 * 60 * 1000,
+}: UseOfflineDataOptions<T>) {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
+  
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setIsOnline(state.isConnected ?? false);
+    });
+    
+    loadData();
+    
+    return () => unsubscribe();
+  }, []);
+  
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Tentar carregar do cache primeiro
+      const cached = await storage.get<{ data: T; timestamp: number }>(cacheKey);
+      
+      if (cached && Date.now() - cached.timestamp < cacheDuration) {
+        setData(cached.data);
+        setLoading(false);
+      }
+      
+      // Se online, buscar dados atualizados
+      if (isOnline) {
+        const freshData = await fetchFn();
+        setData(freshData);
+        
+        // Atualizar cache
+        await storage.set(cacheKey, {
+          data: freshData,
+          timestamp: Date.now(),
+        });
+      }
+    } catch (err) {
+      setError(err as Error);
+      
+      // Se houver erro e tiver cache, usar cache
+      const cached = await storage.get<{ data: T }>(cacheKey);
+      if (cached) {
+        setData(cached.data);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return { data, loading, error, refetch: loadData, isOnline };
+}
+```
+
+### Uso do Hook
+
+```typescript
+// Em um componente
+const { data: cities, loading, error, isOnline } = useOfflineData({
+  fetchFn: () => getDestinations(),
+  cacheKey: '@nomadtravel:destinations',
+});
+
+if (loading) {
+  return <LoadingScreen />;
+}
+
+if (error) {
+  return <ErrorScreen message={error.message} />;
+}
+
+return (
+  <View>
+    {!isOnline && (
+      <Banner message="Você está offline. Mostrando dados em cache." />
+    )}
+    <CityList cities={cities} />
+  </View>
+);
+```
+

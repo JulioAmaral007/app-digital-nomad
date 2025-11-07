@@ -1,12 +1,13 @@
-import { CityItem } from "@/components/CityItem";
-import { cities } from "@/data/cities";
-import { FlatList, StyleSheet, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FlatList, StyleSheet, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+
+import { CityItem } from '@/components/CityItem'
+import { cities } from '@/data/cities'
 
 export default function Index() {
-  const { top, bottom } = useSafeAreaInsets();
+  const { top, bottom } = useSafeAreaInsets()
 
-return (
+  return (
     <View style={styles.container}>
       <FlatList
         contentContainerStyle={{
@@ -21,19 +22,19 @@ return (
           <View
             style={{
               height: 1,
-              backgroundColor: "#5c5c5c",
+              backgroundColor: '#5c5c5c',
               marginVertical: 32,
             }}
           />
         )}
       />
     </View>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#1B1B1B",
+    backgroundColor: '#1B1B1B',
     flex: 1,
   },
-});
+})

@@ -1,27 +1,26 @@
-import { Alert, Image, Pressable, StyleSheet, Text } from "react-native";
+import { Link } from 'expo-router'
+import { Alert, Image, Pressable, StyleSheet, Text } from 'react-native'
 
-import { City } from "@/data/types";
-import { Link } from "expo-router";
+import type { City } from '@/data/types'
 
 type CityItemProps = {
-  city: City;
-};
+  city: City
+}
 
 export function CityItem({ city }: CityItemProps) {
-
   function onPress() {
-    Alert.alert("on press");
+    Alert.alert('on press')
   }
   function onLongPress() {
-    Alert.alert("on press long");
+    Alert.alert('on press long')
   }
-    
+
   return (
     <Link href={`/city/${city.id}`} asChild>
       <Pressable style={styles.card}>
         <Image
           source={city.coverImage}
-          style={{ height: 280, width: "100%" }}
+          style={{ height: 280, width: '100%' }}
           borderRadius={16}
           // resizeMode="cover"
         />
@@ -29,7 +28,7 @@ export function CityItem({ city }: CityItemProps) {
         <Text style={styles.description}>{city.description}</Text>
       </Pressable>
     </Link>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
@@ -41,14 +40,14 @@ const styles = StyleSheet.create({
     // padding: 16,
   },
   title: {
-    color: "#FFF",
+    color: '#FFF',
     fontSize: 24,
     fontWeight: 600,
     marginTop: 16,
   },
   description: {
-    color: "#FFF",
+    color: '#FFF',
     fontSize: 16,
     marginTop: 8,
   },
-});
+})

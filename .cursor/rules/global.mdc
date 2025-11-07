@@ -1,0 +1,188 @@
+---
+alwaysApply: true
+---
+
+# Regras Globais - Nomad Travel
+
+## Filosofia do Projeto
+
+O **Nomad Travel** é um aplicativo completo inspirado nos principais destinos de viagem escolhidos por nômades digitais. O projeto prioriza:
+
+- **Usabilidade**: Interface intuitiva e fácil navegação
+- **Performance**: Otimização para renderização rápida e uso eficiente de recursos
+- **Acessibilidade**: Suporte completo para leitores de tela e navegação por teclado
+- **Experiência Visual**: Design moderno, consistente e agradável
+
+## Estrutura de Pastas
+
+```
+nomad-travel/
+├── app/                    # Rotas do Expo Router (file-based routing)
+│   ├── (tabs)/            # Abas principais (Explorar, Favoritos, Perfil)
+│   ├── (modals)/          # Telas sobrepostas (detalhes, filtros, login)
+│   └── (protected)/       # Rotas protegidas por autenticação
+├── components/            # Componentes reutilizáveis
+│   ├── ui/                # Componentes de UI básicos (Button, Text, Card)
+│   └── features/          # Componentes específicos de features
+├── features/              # Features organizadas por domínio
+│   ├── destinations/      # Feature de destinos
+│   ├── favorites/         # Feature de favoritos
+│   └── auth/              # Feature de autenticação
+├── screens/               # Componentes de tela (se necessário)
+├── services/              # Serviços e APIs
+│   ├── destinations.ts
+│   ├── auth.ts
+│   └── favorites.ts
+├── hooks/                 # Custom hooks
+├── lib/                   # Utilitários e helpers
+│   └── utils.ts
+├── theme/                 # Sistema de design
+│   ├── colors.ts
+│   ├── spacing.ts
+│   ├── typography.ts
+│   └── radius.ts
+└── types/                 # Tipos TypeScript globais
+```
+
+## Convenções de Nomenclatura
+
+### Arquivos e Componentes
+
+- **PascalCase**: Componentes React e arquivos de tela
+  - `CityItem.tsx`
+  - `DestinationCard.tsx`
+  - `LoginScreen.tsx`
+
+- **camelCase**: Funções, variáveis e arquivos de utilitários
+  - `formatDate.ts`
+  - `calculateDistance.ts`
+  - `getUserPreferences.ts`
+
+- **kebab-case**: Arquivos comuns, configurações e assets
+  - `app-config.json`
+  - `api-endpoints.ts`
+  - `user-profile.png`
+
+### Imports com Aliases
+
+Utilizar sempre aliases configurados no `tsconfig.json`:
+
+```typescript
+// ✅ Correto
+import { Button } from '@/components/ui/Button';
+import { useAuth } from '@/hooks/useAuth';
+import { colors } from '@/theme/colors';
+import { formatDate } from '@/lib/utils';
+
+// ❌ Evitar
+import { Button } from '../../../components/ui/Button';
+```
+
+## Tratamento de Erros e Logs
+
+### Estrutura de Erros
+
+```typescript
+// Criar tipos de erro específicos
+export class DestinationError extends Error {
+  constructor(message: string, public code: string) {
+    super(message);
+    this.name = 'DestinationError';
+  }
+}
+```
+
+### Logging
+
+- Usar `console.error` apenas para erros críticos
+- Em produção, considerar biblioteca de logging (ex: `react-native-logs`)
+- Nunca logar informações sensíveis (tokens, senhas, dados pessoais)
+
+```typescript
+// ✅ Correto
+console.error('[DestinationService]', 'Failed to fetch destinations', error);
+
+// ❌ Evitar
+console.log('User token:', token);
+```
+
+### Tratamento de Erros em Componentes
+
+```typescript
+// Sempre tratar erros de forma elegante
+try {
+  const data = await fetchDestinations();
+} catch (error) {
+  // Mostrar feedback ao usuário
+  showErrorToast('Não foi possível carregar os destinos');
+  // Logar para debug
+  console.error('[Component]', error);
+}
+```
+
+## Acessibilidade
+
+### Propriedades Obrigatórias
+
+- **accessibilityLabel**: Sempre fornecer labels descritivos
+- **accessibilityRole**: Definir o papel do elemento
+- **accessibilityHint**: Adicionar dicas quando necessário
+- **focusable**: Garantir que elementos interativos sejam focáveis
+
+### Exemplos
+
+```typescript
+// ✅ Correto
+<TouchableOpacity
+  accessibilityLabel="Adicionar destino aos favoritos"
+  accessibilityRole="button"
+  accessibilityHint="Toque duas vezes para adicionar este destino aos seus favoritos"
+>
+  <Icon name="heart" />
+</TouchableOpacity>
+
+// Para elementos de texto
+<Text
+  accessibilityRole="header"
+  accessibilityLabel={`Cidade ${city.name}, ${city.country}`}
+>
+  {city.name}
+</Text>
+```
+
+### Contraste e Cores
+
+- Contraste mínimo de 4.5:1 para texto normal
+- Contraste mínimo de 3:1 para texto grande (18pt+)
+- Nunca usar apenas cor para transmitir informação
+- Testar com leitores de tela (TalkBack, VoiceOver)
+
+## Boas Práticas Gerais
+
+### Performance
+
+- Lazy loading de imagens e componentes pesados
+- Debounce em buscas e filtros
+- Paginação para listas grandes
+- Cache de dados quando apropriado
+
+### Código Limpo
+
+- Funções pequenas e com responsabilidade única
+- Evitar código duplicado (DRY - Don't Repeat Yourself)
+- Comentários apenas quando necessário para explicar "por quê", não "o quê"
+- Nomes descritivos e autoexplicativos
+
+### Versionamento
+
+- Commits semânticos (ver `rules/git-and-ci.md`)
+- Branches descritivos: `feature/destination-filters`, `fix/auth-redirect`
+- Pull requests com descrição clara das mudanças
+
+### Segurança
+
+- Nunca commitar credenciais ou tokens
+- Validar todas as entradas do usuário
+- Sanitizar dados antes de exibir
+- Usar HTTPS para todas as requisições
+
